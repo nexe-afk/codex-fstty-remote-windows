@@ -102,3 +102,41 @@ codex exec --skip-git-repo-check '列出所有 MCP 工具名称'
 ## License
 
 MIT
+
+## WorkBuddy 修复实录
+
+PD Windows ARM64 VM 中 WorkBuddy 白屏退出的完整诊断与修复经验。
+
+### 问题现象
+
+- WorkBuddy 启动后白屏退出，日志 `startup-*.log` 报：
+  ```
+  StartupPipeline aborted: phase=daemon-bringup step=daemon.select-daemon-runtime reason=step-failed
+  ```
+
+### 根因
+
+WorkBuddy daemon 启动时创建 `C:\Users\<user>\WorkBuddy\Claw` 工作区目录，若目录不存在或用户无写权限 → `EPERM` → daemon 起不来 → 主进程等 ready 信号超时 → 白屏退出。
+
+常见触发条件：
+- `C:\Users\<user>\WorkBuddy` 目录 ACL 只给了 Administrators/SYSTEM，普通用户只有 RX
+- PD 虚拟机首次安装或权限重置后出现
+
+### 修复方法
+
+```bash
+# 一键修复（Mac 端执行）
+./scripts/fix-workbuddy-claw.sh [VM_IP] [VM_USER]
+```
+
+脚本自动：杀残留进程 → 创建 Claw/ClawFallback 目录 → 修 ACL 授权 → 验证可写 → 计划任务重启 WorkBuddy → 校验启动日志。
+
+详细步骤见 [docs/WORKBUDDY_FIX.md](docs/WORKBUDDY_FIX.md)。
+
+### 排查要点
+
+1. `daemon.log` 出现 `daemon_started` ≠ 成功，还需主进程等 ready 握手
+2. `main.log` 中找真正异常（`EPERM` / `Error:` 等），外层错误只是结果
+3. `app.asar` 可用 `npx @electron/asar extract` 反编译分析
+4. `prlctl exec` 是 SYSTEM 身份，GUI 应用要走用户会话计划任务（`/RU` + `/IT`）
+5. PD ARM64 VM 的 `PROCESSOR_ARCHITECTURE=ARM64` 不是问题所在，别被误导
