@@ -1,2 +1,5 @@
 .DS_Store
 *.bak.*
+
+# 大文件走 Release 分发
+bin/
